@@ -7,6 +7,8 @@ declare var s: any;
 @Injectable()
 export class Angulartics2AdobeAnalytics {
 
+  private userProperties: any;
+
   constructor(
     private angulartics2: Angulartics2,
     private location: Location
@@ -20,9 +22,17 @@ export class Angulartics2AdobeAnalytics {
     this.angulartics2.setUserProperties.subscribe((x: any) => this.setUserProperties(x));
   }
 
+  /**
+   * Track a page and add user properties if they exist
+   * 
+   * @param path 
+   */
   pageTrack(path: string) {
     if (typeof s !== 'undefined' && s) {
-      s.clearVars();
+      // if user has added properties, set them before page track
+      if (this.userProperties) {
+        this.setSProperties(this.userProperties);
+      }
       s.t({pageName:path});
     }
   }
@@ -42,10 +52,19 @@ export class Angulartics2AdobeAnalytics {
     }
 
     if (typeof s !== 'undefined' && s) {
-      if (typeof properties === 'object') {
-        this.setUserProperties(properties);
-      }
       if (action) {
+        if (typeof properties === 'object') {
+          // add all properties from this event and user
+          this.setSProperties(this.userProperties);
+          this.setSProperties(properties);
+          this.setLinkTrackVars(this.userProperties);
+          this.setLinkTrackVars(properties);
+
+          if (properties['events']) {
+            s.linkTrackEvents = properties['events'];
+          }
+        }
+
         // if linkName property is passed, use that; otherwise, the action is the linkName
         const linkName = (properties['linkName']) ? properties['linkName'] : action;
         // note that 'this' should refer the link element, but we can't get that in this function. example:
@@ -69,23 +88,72 @@ export class Angulartics2AdobeAnalytics {
     }
   }
 
+  /**
+   * Allows user to add additional properties
+   * 
+   * @param properties object example - {prop1: 'username'}
+   */
+  setUserProperties(properties: any) {
+    if (typeof properties === 'object') {
+      this.userProperties = properties;
+    }
+  }
+
+  /**
+   * set s.pageName from current url
+   */
   private setPageName() {
     const path = this.location.path(true);
     const hashNdx = path.indexOf('#');
     if (hashNdx > 0 && hashNdx < path.length) {
-      s.pageName = path.substring(hashNdx+1);
+      s.pageName = path.substring(hashNdx);
     } else {
       s.pageName = path;
     }
   }
 
-  setUserProperties(properties: any) {
+  /**
+   * Set s properties
+   * @param properties property object
+   */
+  private setSProperties(properties: any) {
     if (typeof properties === 'object') {
       for (let key in properties) {
-        if (properties.hasOwnProperty(key)) {
+        if (properties.hasOwnProperty(key) && typeof s !== 'undefined' && s) {
           s[key] = properties[key];
         }
       }
+    }
+  }
+
+  /**
+   * Adobe Analytics doesn't send properties and events by default in events.
+   * Here the required settings are added to setup event tracking. 
+   * @param properties properties to add to s.linkTrackVars
+   */
+  private setLinkTrackVars(properties: any) {
+    if (typeof s === 'undefined' || !s) {
+      return;
+    }
+
+    if (typeof s['linkTrackVars'] === 'undefined' || !s['linkTrackVars']) {
+      s['linkTrackVars'] = '';
+    }
+
+    if (typeof properties === 'object') {
+      for (let key in properties) {
+        if (properties.hasOwnProperty(key) && s['linkTrackVars'].indexOf(key) < 0) {
+          s['linkTrackVars'] = s['linkTrackVars'] + ',' + key;
+        }
+      }
+    }
+
+    if (s['linkTrackVars'].indexOf('pageName') < 0) {
+      s['linkTrackVars'] = s['linkTrackVars'] + ',pageName';
+    }
+
+    if (s['linkTrackVars'].charAt(0) === ',') {
+      s['linkTrackVars'] = s['linkTrackVars'].substring(1);
     }
   }
 
